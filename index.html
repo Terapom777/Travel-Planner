@@ -28,6 +28,7 @@
 
   <div id="app" class="app" hidden>
     <div id="map" class="map"></div>
+    <div id="splitter" class="splitter" role="separator" aria-label="地図と一覧の境目(ドラッグで調整、ダブルクリックで元に戻す)"><span></span></div>
 
     <section class="panel">
       <header class="panel-head">
@@ -63,6 +64,7 @@
   <input id="importFile" type="file" accept="application/json,.json" hidden>
   <div id="toast" class="toast" hidden></div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

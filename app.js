@@ -383,6 +383,7 @@ function render(force = false) {
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === ui.tab));
   if (document.activeElement !== $('#tripName')) $('#tripName').value = data.tripName;
   view.innerHTML = ui.tab === 'compare' ? viewCompare() : viewPlan();
+  setupSortables();
   renderMap();
 }
 
@@ -407,7 +408,7 @@ function trayItem(c) {
     c.rating ? '★' + c.rating : '',
     c.memo,
   ].filter(Boolean).join(' · ');
-  return `<li class="item">
+  return `<li class="item" data-cand="${c.id}">
     <span class="pin ${c.must ? 'must' : ''}" data-act="focus" data-id="${c.id}">${c.must ? '★' : '●'}</span>
     <div class="info" data-act="editCand" data-id="${c.id}"><div class="name">${esc(c.name)}</div><div class="meta">${esc(meta || c.addr)}</div></div>
     <button class="place-btn-sm" data-act="place" data-id="${c.id}">入れる</button></li>`;
@@ -444,13 +445,13 @@ function legCard(p, i) {
   if (L.bundle) meta.push('🔗 別の区間とまとめ買い');
   if (num(L.cost)) meta.push((L.mode === 'drive' ? '+ ' : '') + fmtMoney(num(L.cost), L.cur));
   if (L.note) meta.push(L.note);
-  return `<li class="tl-leg">
+  return `<div class="tl-leg">
     <div class="tl-leg-body" data-act="editLeg" data-i="${i}">
       <span class="kind">${m.icon}</span>
       <div class="info"><div class="name">${L.date ? fmtDate(L.date) : '日付未定'} · ${m.label}</div><div class="meta">${esc(meta.join(' · '))}</div></div>
     </div>
     ${L.mode === 'flight' ? `<button class="pick-btn" data-act="findFlight" data-i="${i}">${L.flight ? '便を変える' : '便を探す'}</button>` : ''}
-  </li>`;
+  </div>`;
 }
 
 function stopCard(p, i) {
@@ -458,10 +459,10 @@ function stopCard(p, i) {
   const arr = i > 0 ? s.leg.date : '', dep = p.stops[i + 1]?.leg.date || '';
   const range = arr && dep && arr !== dep ? `${fmtDate(arr)}〜${fmtDate(dep)}` : arr ? fmtDate(arr) : dep ? `〜${fmtDate(dep)}` : '';
   const meta = [range, n.n ? `${n.n}泊` : '', s.lodging ? '🛏 ' + (s.lodging.place?.name || '宿') : n.n ? '宿未定' : '', s.spots.length ? `スポット${s.spots.length}` : ''].filter(Boolean);
-  return `<li class="tl-stop" data-act="openStop" data-i="${i}">
+  return `<div class="tl-stop" data-act="openStop" data-i="${i}">
     <span class="num stop">${i + 1}</span>
     <div class="info"><div class="name">${esc(c?.name || '(削除された場所)')}</div><div class="meta">${esc(meta.join(' · '))}</div></div>
-    <span class="chev">›</span></li>`;
+    <span class="chev">›</span></div>`;
 }
 
 function viewTimeline(p) {
@@ -469,7 +470,7 @@ function viewTimeline(p) {
   const chips = [['✈️', c.flight], ['🚗', c.ground], ['🛏', c.lodging], ['🚇', c.local], ['🎟', c.sight], ['🍔', c.daily]]
     .filter(x => x[1]).map(x => `${x[0]} ${fmtJPY(x[1])}`).join('　');
   const tray = trayOf(p);
-  const items = p.stops.map((s, i) => (i > 0 ? legCard(p, i) : '') + stopCard(p, i)).join('');
+  const items = p.stops.map((s, i) => `<li class="tl-item" data-stop="${s.id}">${i > 0 ? legCard(p, i) : ''}${stopCard(p, i)}</li>`).join('');
   return `
     <div class="summary">
       <span>合計 <b>${fmtJPY(c.total)}</b></span>${c.days ? `<span>${c.days}日間</span>` : ''}
@@ -477,9 +478,11 @@ function viewTimeline(p) {
       ${chips ? `<div class="chips">${chips}</div>` : ''}
     </div>
     <h3 class="sec">旅程</h3>
-    ${p.stops.length ? `<ol class="tl">${items}</ol>` : '<p class="empty">行きたい場所を追加して、旅の順番に並べていきます。<br>日本の出発空港・帰着空港も経由地として入れてください。</p>'}
+    ${p.stops.length ? '<p class="drag-hint">ドラッグで並べ替え・下の「まだ入れていない場所」へドラッグで外せます</p>' : '<p class="empty">行きたい場所を追加して、旅の順番に並べていきます。<br>日本の出発空港・帰着空港も経由地として入れてください。</p>'}
+    <ol class="tl">${items}</ol>
     <div class="tray">
       <h3 class="sec">まだ入れていない場所 <span class="count">${tray.length}</span></h3>
+      ${tray.length ? '<p class="drag-hint">「入れる」か、上の旅程の好きな位置へドラッグ</p>' : ''}
       <ul class="list">${tray.map(trayItem).join('')}</ul>
       ${tray.length ? '' : '<p class="sub">ここに行きたい場所をストックして、「入れる」で旅程に配置します。</p>'}
       <button class="add-btn" data-act="addCand">＋ 行きたい場所を追加(検索)</button>
@@ -498,20 +501,21 @@ function viewStop(p, i) {
   const spots = spotsOf(s);
   let list = '';
   spots.forEach((c, j) => {
+    list += `<li class="spot-item" data-j="${j}">`;
     if (j > 0) {
       const r = getRoute(s.mode, spots[j - 1], c);
       const fare = r?.fare ? ' · 運賃 ' + fmtMoney(r.fare.amount, r.fare.cur) : '';
-      list += `<li class="leg">${MODES[s.mode].icon} ${esc(routeText(r) + fare)}</li>`;
+      list += `<div class="leg">${MODES[s.mode].icon} ${esc(routeText(r) + fare)}</div>`;
     }
     const meta = [num(c.cost) ? fmtMoney(num(c.cost), c.cur) : '', c.must ? '★必須' : '', PRICE[c.price] || ''].filter(Boolean).join(' · ');
-    list += `<li class="spot">
+    list += `<div class="spot">
       <span class="num">${j + 1}</span>
       <div class="info" data-act="editCand" data-id="${c.id}"><div class="name">${esc(c.name)}</div>${meta ? `<div class="meta">${esc(meta)}</div>` : ''}</div>
       <div class="ctrl">
         <button data-act="spotUp" data-j="${j}" ${j === 0 ? 'disabled' : ''} aria-label="上へ">↑</button>
         <button data-act="spotDown" data-j="${j}" ${j === spots.length - 1 ? 'disabled' : ''} aria-label="下へ">↓</button>
         <button class="del" data-act="rmSpot" data-j="${j}" aria-label="外す">✕</button>
-      </div></li>`;
+      </div></div></li>`;
   });
   const prevLodging = p.stops[i - 1]?.lodging;
   const lodging = s.lodging
@@ -1193,17 +1197,117 @@ function clearFlightsAround(p, idxs) {
   if (cleared) toast('並び順が変わったので、関係する便の選択を解除しました', 4000);
 }
 
-function moveStop(p, i, dir) {
-  const k = i + dir;
-  if (k < 0 || k >= p.stops.length) return;
-  [p.stops[i], p.stops[k]] = [p.stops[k], p.stops[i]];
-  // 区間(leg)は「前の経由地から来る移動」なので、日付や手段は位置に残す
-  [p.stops[i].leg, p.stops[k].leg] = [p.stops[k].leg, p.stops[i].leg];
-  const lo = Math.min(i, k);
-  clearFlightsAround(p, [lo, lo + 1, lo + 2]);
+/* 経由地を from 番目から to 番目へ移動。区間(leg)は「前の経由地から来る移動」なので、日付は位置に残す */
+function reorderStop(p, from, to) {
+  if (from === to || to < 0 || to >= p.stops.length) return false;
+  const legs = p.stops.map(s => s.leg);
+  const [st] = p.stops.splice(from, 1);
+  p.stops.splice(to, 0, st);
+  p.stops.forEach((s, i) => (s.leg = legs[i]));
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  const idxs = [];
+  for (let k = lo; k <= hi + 1 && k < p.stops.length; k++) idxs.push(k);
+  const untouched = idxs.filter(k => !p.stops[k].leg.flight && !num(p.stops[k].leg.cost));
+  clearFlightsAround(p, idxs);
   p.stops.forEach(s => { s.leg.fromCodes = null; s.leg.toCodes = null; });
-  ui.stop = k;
+  // まだ何も決めていない区間は、距離から移動手段を選び直す
+  untouched.forEach(k => {
+    if (k === 0) return;
+    const a = stopPlace(p.stops[k - 1]), b = stopPlace(p.stops[k]);
+    if (!a || !b) return;
+    const nm = kmBetween(a, b) < 700 ? 'drive' : 'flight';
+    if (nm !== p.stops[k].leg.mode) Object.assign(p.stops[k].leg, { mode: nm, cur: nm === 'flight' ? 'JPY' : 'USD' });
+  });
+  return true;
+}
+function moveStop(p, i, dir) {
+  if (!reorderStop(p, i, i + dir)) return;
+  ui.stop = i + dir;
   commit();
+}
+
+/* ---------- ドラッグ並べ替え(SortableJS) ---------- */
+let sortables = [];
+function setupSortables() {
+  sortables.forEach(s => s.destroy());
+  sortables = [];
+  if (!window.Sortable || ui.tab !== 'plan') return;
+  const p = curPlan();
+  const base = {
+    animation: 150, delay: 200, delayOnTouchOnly: true, touchStartThreshold: 5,
+    ghostClass: 'drag-ghost', chosenClass: 'drag-chosen', forceFallback: true, fallbackOnBody: true,
+    filter: 'button, select, input, a', preventOnFilter: false,
+  };
+  const after = fn => setTimeout(() => { fn(); commit(); }, 0); // Sortableの処理が終わってから描き直す
+  const tl = $('#view .tl'), tray = $('#view .tray .list'), spots = $('#view .spots');
+
+  if (tl) sortables.push(Sortable.create(tl, {
+    ...base, group: { name: 'plan', pull: true, put: true }, draggable: '.tl-item',
+    onUpdate: e => after(() => reorderStop(p, e.oldDraggableIndex, e.newDraggableIndex)),
+    onAdd: e => { // 「まだ入れていない場所」→ 旅程
+      const c = candById(e.item.dataset.cand);
+      let k = 0; // 落とした位置より前にある経由地の数 = 差し込む位置
+      for (let el = e.item.previousElementSibling; el; el = el.previousElementSibling) if (el.classList.contains('tl-item')) k++;
+      if (c) after(() => { insertStop(p, c, k); toast(`「${c.name}」を旅程に入れました`); });
+    },
+  }));
+  if (tray) sortables.push(Sortable.create(tray, {
+    ...base, group: { name: 'plan', pull: true, put: true }, sort: false, draggable: '.item',
+    onAdd: e => { // 旅程 → 「まだ入れていない場所」(旅程から外す)
+      const k = p.stops.findIndex(s => s.id === e.item.dataset.stop);
+      if (k < 0) return;
+      after(() => {
+        const name = stopPlace(p.stops[k])?.name || '';
+        clearFlightsAround(p, [k, k + 1]);
+        p.stops.splice(k, 1);
+        if (p.stops[k]) p.stops[k].leg.fromCodes = null;
+        toast(`「${name}」を旅程から外しました`);
+      });
+    },
+  }));
+  if (spots) {
+    const s = p.stops[ui.stop];
+    sortables.push(Sortable.create(spots, {
+      ...base, draggable: '.spot-item',
+      onUpdate: e => after(() => { const [x] = s.spots.splice(e.oldDraggableIndex, 1); s.spots.splice(e.newDraggableIndex, 0, x); }),
+    }));
+  }
+}
+
+/* ---------- 地図と一覧の仕切り ---------- */
+function setupSplitter() {
+  const sp = $('#splitter'), app = $('#app');
+  const wide = () => matchMedia('(min-width: 900px)').matches;
+  const saved = load('tp.split', {});
+  if (saved.h) app.style.setProperty('--map-h', saved.h + 'px');
+  if (saved.w) app.style.setProperty('--panel-w', saved.w + 'px');
+  let dragging = false;
+  sp.addEventListener('pointerdown', e => {
+    dragging = true; sp.setPointerCapture(e.pointerId);
+    sp.classList.add('active'); document.body.classList.add('resizing');
+  });
+  sp.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    if (wide()) {
+      const w = Math.min(Math.max(e.clientX, 300), innerWidth - 280);
+      app.style.setProperty('--panel-w', w + 'px'); saved.w = Math.round(w);
+    } else {
+      const top = $('#map').getBoundingClientRect().top;
+      const h = Math.min(Math.max(e.clientY - top, 80), innerHeight - 160);
+      app.style.setProperty('--map-h', h + 'px'); saved.h = Math.round(h);
+    }
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false; sp.classList.remove('active'); document.body.classList.remove('resizing');
+    store('tp.split', saved);
+  };
+  sp.addEventListener('pointerup', end);
+  sp.addEventListener('pointercancel', end);
+  sp.addEventListener('dblclick', () => {
+    app.style.removeProperty('--map-h'); app.style.removeProperty('--panel-w');
+    store('tp.split', {});
+  });
 }
 
 function clonePlan(p, name) {
@@ -1224,8 +1328,15 @@ async function planMenu(p) {
     { v: 'rename', label: '名前を変更' },
     { v: 'dup', label: 'この案を複製して別案を作る' },
     { v: 'new', label: '空の新しい案を作る' },
+    ...(p.stops.length ? [{ v: 'clear', label: '旅程を空にする(場所は「まだ入れていない場所」に戻る)', danger: true }] : []),
     ...(data.plans.length > 1 ? [{ v: 'del', label: 'この案を削除', danger: true }] : []),
   ]);
+  if (v === 'clear') {
+    if (!confirm(`「${p.name}」の旅程を空にしますか?(行きたい場所のリストは残ります)`)) return;
+    p.stops = []; ui.stop = -1;
+    commit();
+    return;
+  }
   if (v === 'rename') {
     const r = await formDialog('案の名前', [{ name: 'name', label: '名前', value: p.name }]);
     if (r?.name) p.name = r.name;
@@ -1408,6 +1519,7 @@ async function start() {
     return;
   }
   $('#app').hidden = false;
+  setupSplitter();
   render(true);
   refreshRate();
   try {

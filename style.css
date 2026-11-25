@@ -52,17 +52,36 @@ button:disabled { opacity: .3; }
 
 /* ---------- layout ---------- */
 .app { height: 100dvh; display: flex; flex-direction: column; }
-.map { flex: 0 0 42dvh; margin-top: var(--safe-t); background: var(--bg-2); }
+.map { flex: 0 0 var(--map-h, 42dvh); margin-top: var(--safe-t); background: var(--bg-2); }
 .panel {
   flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 10px 16px calc(32px + var(--safe-b));
-  border-top: 1px solid var(--line);
 }
+/* 地図と一覧の仕切り(ドラッグで比率を変える) */
+.splitter {
+  flex: 0 0 14px; display: grid; place-items: center; background: var(--bg);
+  border-top: 1px solid var(--line); cursor: row-resize; touch-action: none; user-select: none;
+}
+.splitter span { width: 40px; height: 4px; border-radius: 2px; background: var(--line); }
+.splitter:hover span, .splitter.active span { background: var(--accent); }
 @media (min-width: 900px) {
   .app { flex-direction: row-reverse; }
   .map { flex: 1; height: 100dvh; margin-top: 0; }
-  .panel { flex: 0 0 420px; border-top: 0; border-right: 1px solid var(--line); }
+  .panel { flex: 0 0 var(--panel-w, 420px); }
+  .splitter { flex-basis: 10px; border-top: 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); cursor: col-resize; }
+  .splitter span { width: 4px; height: 40px; }
 }
+body.resizing { user-select: none; cursor: row-resize; }
+body.resizing .map { pointer-events: none; }
+
+/* ドラッグ並べ替え */
+.drag-ghost { opacity: .35; }
+.drag-chosen { background: var(--bg-2); border-radius: 10px; }
+.sortable-fallback { opacity: .9 !important; background: var(--bg); box-shadow: 0 6px 20px rgb(0 0 0 / .2); border-radius: 10px; }
+.tl, .tray .list, .spots { min-height: 8px; }
+.tl-item, .spot-item { list-style: none; }
+.tl-item .tl-stop, .spot-item .spot { cursor: grab; }
+.drag-hint { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
 
 .panel-head { display: flex; gap: 8px; align-items: center; }
 .trip-name { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 20px; font-weight: 700; padding: 4px 0; }
