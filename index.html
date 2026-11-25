@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="旅プラン">
+  <title>旅プラン</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 初回: APIキー入力 -->
+  <div id="setup" class="setup" hidden>
+    <div class="setup-card">
+      <h1>旅プラン</h1>
+      <p>Google Maps Platform の APIキーを入力してください。<br>キーはこの端末の中にだけ保存されます。</p>
+      <input id="keyInput" type="text" placeholder="AIza..." autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button id="keySave" class="primary">はじめる</button>
+      <p class="hint">必要なAPI: Maps JavaScript API / Places API (New) / Routes API</p>
+    </div>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <div id="map" class="map"></div>
+
+    <section class="panel">
+      <header class="panel-head">
+        <input id="tripName" class="trip-name" aria-label="旅行の名前">
+        <button id="menuBtn" class="icon-btn" aria-label="メニュー">⋯</button>
+      </header>
+      <nav class="tabs">
+        <button data-tab="cand">候補</button>
+        <button data-tab="plan">プラン</button>
+        <button data-tab="compare">比較</button>
+      </nav>
+      <div id="view"></div>
+    </section>
+  </div>
+
+  <!-- 場所検索 -->
+  <dialog id="picker" class="sheet">
+    <div class="sheet-head">
+      <h3 id="pickerTitle"></h3>
+      <button id="pickerClose" class="icon-btn" aria-label="閉じる">✕</button>
+    </div>
+    <form id="pickerForm" class="search">
+      <input id="pickerInput" type="search" placeholder="場所・空港・ホテル名など" enterkeyhint="search">
+      <button class="primary" type="submit">検索</button>
+    </form>
+    <ul id="pickerResults" class="results"></ul>
+    <div id="pickerCands"></div>
+  </dialog>
+
+  <dialog id="formDlg" class="sheet"></dialog>
+  <dialog id="menu" class="menu"></dialog>
+  <input id="importFile" type="file" accept="application/json,.json" hidden>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
