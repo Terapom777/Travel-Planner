@@ -146,6 +146,49 @@ button:disabled { opacity: .3; }
 .money-row input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); }
 .day-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; }
 
+/* ---------- candidates ---------- */
+.pin.stop { color: #2563eb; }
+.count { font-weight: 500; color: var(--muted); font-size: 13px; margin-left: 4px; }
+
+/* ---------- timeline ---------- */
+.tl { list-style: none; margin: 0; padding: 0; }
+.tl-stop { display: flex; gap: 10px; align-items: center; padding: 10px 0; cursor: pointer; }
+.num.stop { background: #2563eb; color: #fff; }
+.tl-leg {
+  display: flex; gap: 8px; align-items: center;
+  margin-left: 13px; padding: 6px 0 6px 18px; border-left: 2px dashed var(--line);
+}
+.tl-leg-body { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.tl-leg .kind { flex: 0 0 24px; font-size: 18px; }
+.tl-leg .name { font-weight: 500; font-size: 14px; }
+.warn {
+  margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--bg-2);
+  font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.warn > div { width: 100%; }
+.chip-btn { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 5px 10px; font-size: 13px; color: var(--accent); }
+.back { padding-left: 0; margin-bottom: 4px; }
+.stop-head { display: flex; gap: 10px; align-items: center; }
+.stop-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 19px; overflow-wrap: anywhere; }
+.unit { align-self: center; color: var(--muted); }
+
+/* ---------- picker types ---------- */
+.types { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.types:empty { display: none; }
+.seg { display: inline-flex; background: var(--bg-2); border-radius: 8px; padding: 2px; }
+.seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: 6px; font-size: 13px; color: var(--muted); }
+.seg button.on { background: var(--bg); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+
+/* ---------- flights ---------- */
+.fl-form { display: grid; gap: 10px; margin-top: 12px; }
+.f-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fl-form .btn-row { align-items: center; justify-content: space-between; }
+.fl-results { list-style: none; margin: 0; padding: 0; }
+.fl-results li { display: flex; gap: 10px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.fl-results li:active { background: var(--bg-2); }
+.fl-results img { flex: 0 0 28px; border-radius: 6px; background: #fff; }
+.fl-price { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
 /* ---------- compare ---------- */
 .rate { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--muted); }
 .table-wrap { overflow-x: auto; margin: 8px -16px 0; padding: 0 16px; }

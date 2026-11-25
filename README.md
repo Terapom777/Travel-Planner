@@ -58,6 +58,20 @@ iPhoneから使うには、HTTPSのURLで公開する必要があります。い
 
 > APIキーはコードの中には書かず、初回起動時に入力してiPhoneの中に保存する仕組みです。そのため、リポジトリを公開してもキーは漏れません。
 
+## 4. フライト検索(任意)
+
+アプリ内でGoogle Flightsの便の一覧を出すには、SerpApi(無料プランは月250回)と、キーを隠すためのCloudflare Workerを使います。
+
+1. https://serpapi.com/ に登録し、ダッシュボードの「Api Key」をコピーします
+2. https://dash.cloudflare.com/ に登録し、「Workers & Pages」→「作成」→「Hello World から開始」で Worker を作ります
+3. 「コードを編集」で、[worker/flights-proxy.js](worker/flights-proxy.js) の中身に置き換えて「デプロイ」します
+4. Worker の「設定」→「変数とシークレット」に次を登録します
+   - `SERPAPI_KEY`(種類:シークレット):SerpApiのキー
+   - `ALLOWED_ORIGINS`(種類:テキスト):`https://あなたのID.github.io`
+5. Worker のURL(`https://〜.workers.dev`)を、アプリの メニュー →「設定」→「フライト検索の中継URL」に入れます
+
+検索結果は6時間、端末に保存して使い回し、検索回数を節約します。
+
 ## ファイル構成
 
 ```
@@ -67,4 +81,5 @@ app.js         アプリの処理すべて
 manifest.json  ホーム画面に追加したときの設定
 sw.js          オフラインでもアプリ本体を開けるようにするキャッシュ
 icon-*.png     アイコン
+worker/        フライト検索の中継プログラム(Cloudflareに貼り付ける。GitHubには置かなくてもよい)
 ```
