@@ -82,8 +82,9 @@ function migrate(d) {
 }
 
 let data = migrate(load(K.data, null));
-const ui = Object.assign({ tab: 'cand', planId: null, stop: -1 }, load(K.ui, {}));
+const ui = Object.assign({ tab: 'plan', planId: null, stop: -1 }, load(K.ui, {}));
 if (typeof ui.stop !== 'number') ui.stop = -1;
+if (ui.tab !== 'compare') ui.tab = 'plan';
 
 const saveData = () => store(K.data, data);
 const saveSettings = () => store(K.settings, settings);
@@ -381,7 +382,7 @@ function render(force = false) {
   renderDeferred = false;
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === ui.tab));
   if (document.activeElement !== $('#tripName')) $('#tripName').value = data.tripName;
-  view.innerHTML = ui.tab === 'cand' ? viewCand() : ui.tab === 'plan' ? viewPlan() : viewCompare();
+  view.innerHTML = ui.tab === 'compare' ? viewCompare() : viewPlan();
   renderMap();
 }
 
@@ -395,33 +396,21 @@ function usedIn(id) {
   return out.join(', ');
 }
 
-function candItem(c) {
+/* このプランでまだ使っていない場所(=トレイ) */
+function isPlaced(p, id) { return p.stops.some(s => s.candId === id || s.spots.includes(id)); }
+const trayOf = p => data.candidates.filter(c => !isPlaced(p, c.id));
+
+function trayItem(c) {
   const meta = [
     num(c.cost) ? fmtMoney(num(c.cost), c.cur) : '',
     PRICE[c.price] || '',
     c.rating ? '★' + c.rating : '',
-    usedIn(c.id) ? '📅 ' + usedIn(c.id) : '',
     c.memo,
   ].filter(Boolean).join(' · ');
-  const icon = c.type === 'stop' ? '📍' : c.must ? '★' : '●';
-  return `<li class="item" data-act="focus" data-id="${c.id}">
-    <span class="pin ${c.type === 'stop' ? 'stop' : c.must ? 'must' : ''}">${icon}</span>
-    <div class="info"><div class="name">${esc(c.name)}</div><div class="meta">${esc(meta || c.addr)}</div></div>
-    <button class="icon-btn sm" data-act="editCand" data-id="${c.id}" aria-label="編集">✎</button></li>`;
-}
-
-function viewCand() {
-  const stops = data.candidates.filter(c => c.type === 'stop');
-  const spots = data.candidates.filter(c => c.type !== 'stop');
-  return `
-    <p class="sub">行きたい場所をとりあえずストック。<b>📍経由地</b>(都市・空港など)は旅程の骨組みとして必ず通る場所、<b>スポット</b>は経由地で立ち寄る観光地やお店です。</p>
-    <button class="add-btn" data-act="addCand">＋ 候補を追加</button>
-    <h3 class="sec">📍 経由地 <span class="count">${stops.length}</span></h3>
-    <ul class="list">${stops.map(candItem).join('')}</ul>
-    ${stops.length ? '' : '<p class="empty">都市や空港を「経由地」として追加しましょう</p>'}
-    <h3 class="sec">スポット <span class="count">${spots.length}</span></h3>
-    <ul class="list">${spots.map(candItem).join('')}</ul>
-    ${spots.length ? '' : '<p class="empty">まだスポットがありません</p>'}`;
+  return `<li class="item">
+    <span class="pin ${c.must ? 'must' : ''}" data-act="focus" data-id="${c.id}">${c.must ? '★' : '●'}</span>
+    <div class="info" data-act="editCand" data-id="${c.id}"><div class="name">${esc(c.name)}</div><div class="meta">${esc(meta || c.addr)}</div></div>
+    <button class="place-btn-sm" data-act="place" data-id="${c.id}">入れる</button></li>`;
 }
 
 /* ---------- プラン ---------- */
@@ -479,7 +468,7 @@ function viewTimeline(p) {
   const c = planCost(p);
   const chips = [['✈️', c.flight], ['🚗', c.ground], ['🛏', c.lodging], ['🚇', c.local], ['🎟', c.sight], ['🍔', c.daily]]
     .filter(x => x[1]).map(x => `${x[0]} ${fmtJPY(x[1])}`).join('　');
-  const missing = data.candidates.filter(x => x.type === 'stop' && !p.stops.some(s => s.candId === x.id));
+  const tray = trayOf(p);
   const items = p.stops.map((s, i) => (i > 0 ? legCard(p, i) : '') + stopCard(p, i)).join('');
   return `
     <div class="summary">
@@ -488,9 +477,14 @@ function viewTimeline(p) {
       ${chips ? `<div class="chips">${chips}</div>` : ''}
     </div>
     <h3 class="sec">旅程</h3>
-    ${p.stops.length ? `<ol class="tl">${items}</ol>` : '<p class="empty">候補の「経由地」を、旅の順番に並べていきます。<br>日本の出発空港・帰着空港も経由地として入れてください。</p>'}
-    <button class="add-btn" data-act="addStop">＋ 経由地を追加</button>
-    ${missing.length ? `<div class="warn"><div>まだ旅程に入っていない経由地</div>${missing.map(m => `<button class="chip-btn" data-act="quickStop" data-id="${m.id}">＋ ${esc(m.name)}</button>`).join('')}</div>` : ''}
+    ${p.stops.length ? `<ol class="tl">${items}</ol>` : '<p class="empty">行きたい場所を追加して、旅の順番に並べていきます。<br>日本の出発空港・帰着空港も経由地として入れてください。</p>'}
+    <div class="tray">
+      <h3 class="sec">まだ入れていない場所 <span class="count">${tray.length}</span></h3>
+      <ul class="list">${tray.map(trayItem).join('')}</ul>
+      ${tray.length ? '' : '<p class="sub">ここに行きたい場所をストックして、「入れる」で旅程に配置します。</p>'}
+      <button class="add-btn" data-act="addCand">＋ 行きたい場所を追加(検索)</button>
+      <p class="sub">地図のお店・観光地アイコンや、好きな地点をタップしても追加できます</p>
+    </div>
     <h3 class="sec">食費・その他(1日あたり)</h3>
     <div class="money-row">
       <input type="number" inputmode="decimal" step="any" data-field="dailyAmount" value="${esc(p.daily?.amount ?? 0)}" aria-label="金額">
@@ -512,7 +506,7 @@ function viewStop(p, i) {
     const meta = [num(c.cost) ? fmtMoney(num(c.cost), c.cur) : '', c.must ? '★必須' : '', PRICE[c.price] || ''].filter(Boolean).join(' · ');
     list += `<li class="spot">
       <span class="num">${j + 1}</span>
-      <div class="info"><div class="name">${esc(c.name)}</div>${meta ? `<div class="meta">${esc(meta)}</div>` : ''}</div>
+      <div class="info" data-act="editCand" data-id="${c.id}"><div class="name">${esc(c.name)}</div>${meta ? `<div class="meta">${esc(meta)}</div>` : ''}</div>
       <div class="ctrl">
         <button data-act="spotUp" data-j="${j}" ${j === 0 ? 'disabled' : ''} aria-label="上へ">↑</button>
         <button data-act="spotDown" data-j="${j}" ${j === spots.length - 1 ? 'disabled' : ''} aria-label="下へ">↓</button>
@@ -536,6 +530,7 @@ function viewStop(p, i) {
       <span class="num stop">${i + 1}</span>
       <h2>${esc(place?.name || '')}</h2>
       <div class="ctrl">
+        <button data-act="editCand" data-id="${place?.id || ''}" aria-label="場所を編集">✎</button>
         <button data-act="stopUp" ${i === 0 ? 'disabled' : ''} aria-label="前へ">↑</button>
         <button data-act="stopDown" ${i === p.stops.length - 1 ? 'disabled' : ''} aria-label="後ろへ">↓</button>
       </div>
@@ -567,10 +562,9 @@ function viewCompare() {
   const rows = [['flight', '✈️ 航空券'], ['ground', '🚗 陸路の移動'], ['lodging', '🛏 宿泊'], ['local', '🚇 現地の交通'], ['sight', '🎟 観光・入場'], ['daily', '🍔 食費・その他']];
   const cs = data.plans.map(p => ({ p, c: planCost(p) }));
   const min = Math.min(...cs.map(x => x.c.total));
-  const stopIds = data.candidates.filter(c => c.type === 'stop').map(c => c.id);
-  const mustIds = data.candidates.filter(c => c.type !== 'stop' && c.must).map(c => c.id);
-  const coverStops = p => stopIds.filter(id => p.stops.some(s => s.candId === id)).length;
-  const coverMust = p => { const u = new Set(p.stops.flatMap(s => s.spots)); return mustIds.filter(id => u.has(id)).length; };
+  const allIds = data.candidates.map(c => c.id);
+  const mustIds = data.candidates.filter(c => c.must).map(c => c.id);
+  const covered = (p, ids) => ids.filter(id => isPlaced(p, id)).length;
   const td = f => cs.map(f).map(v => `<td>${v}</td>`).join('');
   return `
     <div class="rate">
@@ -586,8 +580,8 @@ function viewCompare() {
         <tr><th>1日あたり</th>${td(x => fmtJPY(x.c.total / Math.max(1, x.c.days)))}</tr>
         <tr><th>運転距離</th>${td(x => (x.c.driveM ? fmtMi(x.c.driveM) : '—'))}</tr>
         <tr><th>運転時間</th>${td(x => (x.c.driveS ? fmtDur(x.c.driveS) : '—'))}</tr>
-        ${stopIds.length ? `<tr><th>📍経由地</th>${td(x => `${coverStops(x.p)} / ${stopIds.length}`)}</tr>` : ''}
-        ${mustIds.length ? `<tr><th>★必須スポット</th>${td(x => `${coverMust(x.p)} / ${mustIds.length}`)}</tr>` : ''}
+        ${mustIds.length ? `<tr><th>★必須の場所</th>${td(x => `${covered(x.p, mustIds)} / ${mustIds.length}`)}</tr>` : ''}
+        ${allIds.length ? `<tr><th>行きたい場所</th>${td(x => `${covered(x.p, allIds)} / ${allIds.length}`)}</tr>` : ''}
       </tbody>
     </table></div>
     ${cs.some(x => x.c.pending) ? '<p class="sub">ルートを計算中の項目があります…</p>' : ''}
@@ -617,9 +611,53 @@ function initMap() {
     center: { lat: 39.5, lng: -98.35 }, zoom: 4,
     mapId: 'DEMO_MAP_ID', colorScheme: 'FOLLOW_SYSTEM',
     disableDefaultUI: true, zoomControl: true,
-    gestureHandling: 'greedy', clickableIcons: false,
+    gestureHandling: 'greedy', clickableIcons: true,
   });
   infoWin = new google.maps.InfoWindow();
+  map.addListener('click', onMapClick);
+}
+
+/* 地図タップで場所を追加: お店・観光地アイコン → その場所 / 何もない所 → 名前を付けて地点を追加 */
+async function fetchPlaceById(id) {
+  const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(id)}?languageCode=ja`, {
+    referrerPolicy: 'no-referrer-when-downgrade',
+    headers: { 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,priceLevel,rating' },
+  });
+  const p = await res.json();
+  if (!res.ok) throw new Error(p.error?.message || `HTTP ${res.status}`);
+  return { pid: p.id, name: p.displayName?.text || '(名称なし)', addr: p.formattedAddress || '', lat: p.location.latitude, lng: p.location.longitude, price: p.priceLevel || '', rating: p.rating || 0 };
+}
+
+function popup(pos, html, onAdd) {
+  const div = document.createElement('div');
+  div.className = 'map-pop';
+  div.innerHTML = html + '<button type="button" class="primary">＋ 行きたい場所に追加</button>';
+  div.querySelector('button').onclick = () => { infoWin.close(); onAdd(); };
+  infoWin.setContent(div);
+  infoWin.setPosition(pos);
+  infoWin.open({ map });
+}
+
+async function onMapClick(e) {
+  if (ui.tab === 'compare') return;
+  const p = curPlan();
+  const addAndPlace = c => { commit(); placeCand(p, c); };
+  if (e.placeId) {
+    e.stop(); // Google標準の吹き出しの代わりに、自前の吹き出しを出す
+    try {
+      const r = await fetchPlaceById(e.placeId);
+      const exists = data.candidates.find(x => x.pid === r.pid);
+      popup(e.latLng, `<div class="pop-name">${esc(r.name)}</div><div class="pop-meta">${esc([PRICE[r.price], r.rating ? '★' + r.rating : '', r.addr].filter(Boolean).join(' · '))}</div>${exists ? '<div class="pop-meta">(行きたい場所に追加済み)</div>' : ''}`,
+        () => addAndPlace(ensureCand(r)));
+    } catch (err) { toast('場所の情報を取得できませんでした: ' + err.message); }
+    return;
+  }
+  const lat = e.latLng.lat(), lng = e.latLng.lng();
+  popup(e.latLng, `<div class="pop-name">この地点</div><div class="pop-meta">${lat.toFixed(4)}, ${lng.toFixed(4)}</div>`, async () => {
+    const v = await formDialog('地点に名前を付ける', [{ name: 'name', label: '名前', value: '', placeholder: '例: 絶景ポイント、キャンプ場' }]);
+    if (!v) return;
+    addAndPlace(ensureCand({ name: v.name || `地点 ${lat.toFixed(3)}, ${lng.toFixed(3)}`, lat, lng }));
+  });
 }
 
 function clearOverlays() {
@@ -665,17 +703,12 @@ function drawMap() {
   clearOverlays();
   const pts = [];
   let key;
-  if (ui.tab === 'cand') {
-    data.candidates.forEach(c => {
-      if (c.type === 'stop') addPin(c, '📍', COL.stop, c.name);
-      else addPin(c, c.must ? '★' : '', c.must ? COL.must : COL.accent, c.name);
-      pts.push(c);
-    });
-    key = 'cand:' + pts.length;
-  } else {
+  {
     const p = curPlan();
     const si = ui.tab === 'plan' ? ui.stop : -1;
     if (si === -1) {
+      // まだ入れていない場所はグレー(★必須は赤)で表示
+      trayOf(p).forEach(c => { addPin(c, c.must ? '★' : '', c.must ? COL.must : COL.gray, `未配置: ${c.name}`); pts.push(c); });
       p.stops.forEach((s, i) => {
         if (i > 0) drawLeg(p, i);
         const c = stopPlace(s);
@@ -731,14 +764,16 @@ function renderPickerTypes() {
 function renderPickerCands() {
   const box = $('#pickerCands');
   const ctx = pickerCtx;
-  if (!ctx?.candType) { box.innerHTML = ''; return; }
-  const list = data.candidates.filter(c => (ctx.candType === 'stop' ? c.type === 'stop' : c.type !== 'stop'));
+  if (!ctx?.cands) { box.innerHTML = ''; return; }
   const added = ctx.added || new Set();
+  // まだ入れていない場所を先に、使用中の場所を後に
+  const list = data.candidates.filter(c => !ctx.exclude?.(c) || added.has(c.id))
+    .sort((a, b) => (ctx.plan ? isPlaced(ctx.plan, a.id) - isPlaced(ctx.plan, b.id) : 0));
   box.innerHTML = list.length
-    ? `<h3 class="sec">候補リストから</h3><ul class="results">${list.map(c => `
-        <li><div class="info"><div class="name">${c.type === 'stop' ? '📍 ' : c.must ? '★ ' : ''}${esc(c.name)}</div><div class="meta">${esc(usedIn(c.id) || c.addr)}</div></div>
+    ? `<h3 class="sec">行きたい場所から選ぶ</h3><ul class="results">${list.map(c => `
+        <li><div class="info"><div class="name">${c.must ? '★ ' : ''}${esc(c.name)}</div><div class="meta">${esc(usedIn(c.id) || '未配置 · ' + c.addr)}</div></div>
         <button class="pick-btn ${added.has(c.id) ? 'done' : ''}" data-cand="${c.id}">${added.has(c.id) ? '✓ 追加' : '追加'}</button></li>`).join('')}</ul>`
-    : `<p class="sub">候補リストに${ctx.candType === 'stop' ? '経由地' : 'スポット'}がありません。上で検索して追加できます。</p>`;
+    : '<p class="sub">上で検索して追加できます。</p>';
 }
 function renderPickerResults() {
   const added = pickerCtx?.addedPid || new Set();
@@ -775,7 +810,7 @@ $('#picker').addEventListener('click', e => {
     if (!ctx.multi) { ctx.picked = r; $('#picker').close(); return; }
     (ctx.addedPid ||= new Set()).add(r.pid);
     const c = ctx.onPick(r);
-    if (c && ctx.candType) (ctx.added ||= new Set()).add(c.id);
+    if (c && ctx.cands) (ctx.added ||= new Set()).add(c.id);
     renderPickerResults(); renderPickerCands();
   } else if (cb) {
     const c = candById(cb.dataset.cand);
@@ -790,11 +825,11 @@ $('#picker').addEventListener('close', () => {
   ctx?.resolve?.(ctx.picked || null);
 });
 
-function ensureCand(place, type) {
-  let c = data.candidates.find(x => x.pid && x.pid === place.pid);
+function ensureCand(place) {
+  let c = place.pid ? data.candidates.find(x => x.pid === place.pid) : null;
   if (!c) {
-    c = { id: uid(), pid: place.pid, name: place.name, addr: place.addr, lat: place.lat, lng: place.lng, price: place.price, rating: place.rating,
-      type: type === 'auto' || !type ? guessType(place) : type, cost: 0, cur: 'USD', must: false, memo: '' };
+    c = { id: uid(), pid: place.pid || '', name: place.name, addr: place.addr || '', lat: place.lat, lng: place.lng, price: place.price || '', rating: place.rating || 0,
+      cost: 0, cur: 'USD', must: false, memo: '' };
     data.candidates.push(c);
     saveData();
   }
@@ -878,7 +913,9 @@ function formDialog(title, fields, { deletable = false, deleteLabel = '削除' }
 
 function actionSheet(items) {
   const dlg = $('#menu');
-  dlg.innerHTML = `<form method="dialog">${items.map(i => `<button value="${i.v}" class="${i.danger ? 'danger' : ''}">${esc(i.label)}</button>`).join('')}
+  dlg.innerHTML = `<form method="dialog">${items.map(i => (i.title
+    ? `<div class="menu-title">${esc(i.title)}</div>`
+    : `<button value="${esc(i.v)}" class="${i.danger ? 'danger' : ''} ${i.rec ? 'rec' : ''}">${esc(i.label)}</button>`)).join('')}
     <button value="" class="muted">閉じる</button></form>`;
   dlg.returnValue = '';
   dlg.showModal();
@@ -1027,9 +1064,8 @@ const commit = () => { saveData(); saveUi(); render(true); };
 async function editCand(c) {
   const v = await formDialog(c.name, [
     { name: 'name', label: '名前', value: c.name },
-    { name: 'type', type: 'select', label: '種類', value: c.type, options: [{ v: 'stop', l: '📍 経由地(都市・空港など、必ず通る)' }, { v: 'spot', l: 'スポット(観光地・お店など)' }] },
     { name: 'cost', curName: 'cur', type: 'money', label: '入場料・体験代など', value: c.cost, cur: c.cur || 'USD' },
-    { name: 'must', type: 'checkbox', label: '★ 必ず行きたい(スポット)', value: c.must },
+    { name: 'must', type: 'checkbox', label: '★ 必ず行きたい', value: c.must },
     { name: 'memo', type: 'textarea', label: 'メモ', value: c.memo },
   ], { deletable: true });
   if (!v) return;
@@ -1047,10 +1083,78 @@ async function editCand(c) {
   commit();
 }
 
-function addStopToPlan(p, c) {
-  const prev = p.stops.length ? stopPlace(p.stops[p.stops.length - 1]) : null;
+/* 旅程の k 番目に経由地として差し込む */
+function insertStop(p, c, k = p.stops.length) {
+  const prev = k > 0 ? stopPlace(p.stops[k - 1]) : null;
   const mode = prev && kmBetween(prev, c) < 700 ? 'drive' : 'flight';
-  p.stops.push(newStop(c.id, mode, p.stops.length ? 1 : 0));
+  p.stops.splice(k, 0, newStop(c.id, mode, p.stops.length ? 1 : 0));
+  const next = p.stops[k + 1];
+  if (next) { // 次の区間は出発地が変わるので、選んでいた便は解除
+    const untouched = !next.leg.flight && !num(next.leg.cost);
+    clearFlightsAround(p, [k + 1]);
+    next.leg.fromCodes = null;
+    // まだ何も決めていない区間なら、距離から移動手段を選び直す(例: 成田→ABQ の間に PHX → PHX→ABQ は車)
+    if (untouched) {
+      const nm = kmBetween(c, stopPlace(next)) < 700 ? 'drive' : 'flight';
+      if (nm !== next.leg.mode) Object.assign(next.leg, { mode: nm, cur: nm === 'flight' ? 'JPY' : 'USD' });
+    }
+  }
+}
+const addStopToPlan = (p, c) => insertStop(p, c);
+
+/* 寄り道が最小になる差し込み位置・最寄りの経由地 */
+function bestInsert(p, c) {
+  let best = p.stops.length, bestCost = Infinity;
+  for (let k = 0; k <= p.stops.length; k++) {
+    const a = k > 0 ? stopPlace(p.stops[k - 1]) : null, b = stopPlace(p.stops[k] || {});
+    const cost = a && b ? kmBetween(a, c) + kmBetween(c, b) - kmBetween(a, b) : a ? kmBetween(a, c) : b ? kmBetween(c, b) : 0;
+    // 先頭(日本の出発地の前)は通常ありえないので少し不利に
+    const adj = k === 0 && p.stops.length ? cost + 1e5 : cost;
+    if (adj < bestCost) { bestCost = adj; best = k; }
+  }
+  return best;
+}
+function nearestStop(p, c) {
+  let best = -1, d = Infinity;
+  p.stops.forEach((s, i) => { const x = stopPlace(s); if (x) { const e = kmBetween(x, c); if (e < d) { d = e; best = i; } } });
+  return best;
+}
+
+/* 行きたい場所を旅程に配置する(経由地として / どこかの経由地で立ち寄り) */
+async function placeCand(p, c) {
+  const nameOf = i => stopPlace(p.stops[i])?.name || '';
+  const how = await actionSheet([
+    { title: `「${c.name}」をどう入れますか?` },
+    { v: 'stop', label: '📍 経由地として旅程に入れる(移動の区切り・泊まる所など)' },
+    ...(p.stops.length ? [{ v: 'spot', label: '🎯 どこかの経由地で立ち寄る(街の中で回る)' }] : []),
+    { v: 'later', label: 'あとで決める' },
+  ]);
+  if (how === 'stop') {
+    if (!p.stops.length) { insertStop(p, c, 0); commit(); return; }
+    const rec = bestInsert(p, c);
+    const opts = [];
+    for (let k = 0; k <= p.stops.length; k++) {
+      const label = k === 0 ? `最初(${nameOf(0)}の前)`
+        : k === p.stops.length ? `最後(${nameOf(k - 1)}の後)`
+        : `${nameOf(k - 1)} と ${nameOf(k)} の間`;
+      opts.push({ v: String(k), label: label + (k === rec ? '(おすすめ)' : ''), rec: k === rec });
+    }
+    const v = await actionSheet([{ title: 'どこに入れますか?' }, ...opts]);
+    if (v === '') return;
+    insertStop(p, c, +v);
+    commit();
+    toast(`「${c.name}」を旅程に入れました`);
+  } else if (how === 'spot') {
+    const rec = nearestStop(p, c);
+    const v = await actionSheet([
+      { title: 'どこで立ち寄りますか?' },
+      ...p.stops.map((s, i) => ({ v: String(i), label: `${i + 1}. ${nameOf(i)}${i === rec ? '(いちばん近い)' : ''}`, rec: i === rec })),
+    ]);
+    if (v === '') return;
+    p.stops[+v].spots.push(c.id);
+    commit();
+    toast(`「${c.name}」を ${nameOf(+v)} に入れました`);
+  }
 }
 
 async function editLeg(p, i) {
@@ -1225,8 +1329,9 @@ $('#view').addEventListener('click', e => {
   const i = +t.dataset.i, j = +t.dataset.j;
   switch (t.dataset.act) {
     case 'addCand':
-      openPicker({ title: '候補を追加', multi: true, typeToggle: true, onPick: r => { const c = ensureCand(r, pickerCtx.type); render(true); return c; } });
+      openPicker({ title: '行きたい場所を追加', multi: true, onPick: r => { const c = ensureCand(r); render(true); return c; } });
       break;
+    case 'place': placeCand(p, candById(t.dataset.id)); break;
     case 'editCand': editCand(candById(t.dataset.id)); break;
     case 'focus': {
       const c = candById(t.dataset.id);
@@ -1235,12 +1340,11 @@ $('#view').addEventListener('click', e => {
     }
     case 'addStop':
       openPicker({
-        title: '経由地を追加', multi: true, candType: 'stop',
-        onPick: r => { const c = ensureCand(r, 'stop'); addStopToPlan(p, c); commit(); return c; },
+        title: '経由地を最後に追加', multi: true, cands: true, plan: p,
+        onPick: r => { const c = ensureCand(r); addStopToPlan(p, c); commit(); return c; },
         onPickCand: c => { addStopToPlan(p, c); commit(); },
       });
       break;
-    case 'quickStop': addStopToPlan(p, candById(t.dataset.id)); commit(); break;
     case 'openStop': ui.stop = i; saveUi(); render(true); $('.panel').scrollTop = 0; break;
     case 'back': ui.stop = -1; saveUi(); render(true); break;
     case 'editLeg': editLeg(p, i); break;
@@ -1256,8 +1360,9 @@ $('#view').addEventListener('click', e => {
     case 'copyLodging': s.lodging = clone(p.stops[ui.stop - 1].lodging); commit(); break;
     case 'addSpot':
       openPicker({
-        title: `${stopPlace(s)?.name || ''} に追加`, multi: true, candType: 'spot',
-        onPick: r => { const c = ensureCand(r, 'spot'); s.spots.push(c.id); commit(); return c; },
+        title: `${stopPlace(s)?.name || ''} で立ち寄る場所`, multi: true, cands: true, plan: p,
+        exclude: c => s.spots.includes(c.id) || c.id === s.candId,
+        onPick: r => { const c = ensureCand(r); s.spots.push(c.id); commit(); return c; },
         onPickCand: c => { s.spots.push(c.id); commit(); },
       });
       break;

@@ -75,7 +75,7 @@ button:disabled { opacity: .3; }
 .text-btn.danger { color: var(--danger); }
 
 /* ---------- tabs ---------- */
-.tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--bg-2); border-radius: 10px; padding: 3px; margin: 8px 0 12px; }
+.tabs { display: grid; grid-template-columns: repeat(2, 1fr); background: var(--bg-2); border-radius: 10px; padding: 3px; margin: 8px 0 12px; }
 .tabs button { border: 0; background: transparent; padding: 8px; border-radius: 8px; font-weight: 600; color: var(--muted); }
 .tabs button.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
 
@@ -146,7 +146,17 @@ button:disabled { opacity: .3; }
 .money-row input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); }
 .day-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; }
 
-/* ---------- candidates ---------- */
+/* ---------- map popup(地図の吹き出しは常に白背景) ---------- */
+.map-pop { color: #18181b; max-width: 240px; display: grid; gap: 4px; font-size: 13px; }
+.map-pop .pop-name { font-weight: 700; font-size: 14px; }
+.map-pop .pop-meta { color: #52525b; }
+.map-pop .primary { margin-top: 6px; padding: 8px 10px; font-size: 13px; background: #0f766e; color: #fff; }
+
+/* ---------- tray(まだ入れていない場所) ---------- */
+.tray { margin-top: 20px; padding: 4px 12px 10px; border-radius: 14px; background: var(--bg-2); }
+.tray .item { border-bottom-color: var(--line); }
+.tray .sec { margin-top: 10px; }
+.place-btn-sm { flex: 0 0 auto; border: 0; background: var(--accent); color: var(--on-accent); border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 14px; }
 .pin.stop { color: #2563eb; }
 .count { font-weight: 500; color: var(--muted); font-size: 13px; margin-left: 4px; }
 
@@ -240,7 +250,10 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 
 .menu { border: 0; border-radius: 16px; padding: 8px; width: min(320px, calc(100% - 32px)); }
 .menu form { display: grid; }
+.menu { max-height: calc(100dvh - 48px); overflow-y: auto; }
+.menu .menu-title { padding: 10px 12px 4px; font-size: 13px; color: var(--muted); }
 .menu button { border: 0; background: transparent; text-align: left; padding: 14px 12px; border-radius: 10px; }
+.menu .rec { color: var(--accent); font-weight: 600; }
 .menu button:active { background: var(--bg-2); }
 .menu .danger { color: var(--danger); }
 .menu .muted { color: var(--muted); text-align: center; }
