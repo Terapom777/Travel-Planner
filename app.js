@@ -87,16 +87,21 @@ function toast(msg, ms = 3000) {
 
 /* Places API (New): テキスト検索 */
 async function searchPlaces(q) {
-  const body = { textQuery: q, languageCode: 'ja', maxResultCount: 8 };
+  // 地図の表示範囲を優先して検索。範囲が取れない・広すぎるときはアメリカ本土を優先
+  // (指定しないと、接続元=日本の近くの店が出てしまう)
+  const US = { low: { latitude: 24, longitude: -125 }, high: { latitude: 50, longitude: -66 } };
+  let rect = US;
   const b = map?.getBounds();
   if (b) {
     const sw = b.getSouthWest(), ne = b.getNorthEast();
-    if (sw.lng() < ne.lng()) {
-      body.locationBias = { rectangle: { low: { latitude: sw.lat(), longitude: sw.lng() }, high: { latitude: ne.lat(), longitude: ne.lng() } } };
+    if (sw.lng() < ne.lng() && ne.lng() - sw.lng() < 60) {
+      rect = { low: { latitude: sw.lat(), longitude: sw.lng() }, high: { latitude: ne.lat(), longitude: ne.lng() } };
     }
   }
+  const body = { textQuery: q, languageCode: 'ja', regionCode: 'US', maxResultCount: 8, locationBias: { rectangle: rect } };
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
+    referrerPolicy: 'no-referrer-when-downgrade', // APIキーのウェブサイト制限(パス付き)と照合できるよう、ページのURLを全部送る
     headers: {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
@@ -149,6 +154,7 @@ async function fetchRoute(mode, a, b, tolls) {
   if (mode === 'TRANSIT') mask += ',routes.travelAdvisory.transitFare';
   const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
+    referrerPolicy: 'no-referrer-when-downgrade',
     headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': mask },
     body: JSON.stringify(body),
   });
