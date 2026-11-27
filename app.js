@@ -259,6 +259,17 @@ async function refreshRate(force = false) {
  * フライト検索(SerpApi Google Flights、Cloudflare Worker経由)
  * ========================================================= */
 const CLASSES = { 1: 'エコノミー', 2: 'プレエコ', 3: 'ビジネス', 4: 'ファースト' };
+const CLS_SHORT = { 1: 'エコ', 2: 'プレエコ', 3: 'ビジ', 4: 'ファ' };
+function clsFromText(t) {
+  t = String(t || '').toLowerCase();
+  if (!t) return null;
+  if (/premium|プレミアム/.test(t)) return 2;
+  if (/first|ファースト/.test(t)) return 4;
+  if (/business|ビジネス/.test(t)) return 3;
+  if (/economy|エコノミー/.test(t)) return 1;
+  return null;
+}
+const normNum = s => String(s || '').replace(/\s/g, '').toUpperCase();
 const flightCache = load(K.flights, {});
 async function flightApi(params) {
   if (!settings.flightProxy) throw new Error('フライト検索の中継URLが未設定です(メニュー →「設定」)');
@@ -288,6 +299,10 @@ function parseOption(o) {
     dep: { id: f[0].departure_airport.id, time: f[0].departure_airport.time },
     arr: { id: f[f.length - 1].arrival_airport.id, time: f[f.length - 1].arrival_airport.time },
     lay: (o.layovers || []).map(l => ({ id: l.id, mins: l.duration, overnight: !!l.overnight })),
+    segs: f.map(x => ({
+      from: x.departure_airport.id, to: x.arrival_airport.id, dep: x.departure_airport.time, arr: x.arrival_airport.time,
+      num: x.flight_number, airline: x.airline, mins: x.duration || 0, cls: clsFromText(x.travel_class),
+    })),
     token: o.departure_token || '',
   };
 }
@@ -430,7 +445,8 @@ function viewPlan() {
 function flightSummary(L) {
   const f = L.flight;
   if (!f) return '';
-  const cls = f.cls && f.cls !== 1 ? `【${CLASSES[f.cls]}】` : '';
+  const cls = f.segCls ? `【${f.segs.map((s, n) => `${s.from}-${s.to} ${CLS_SHORT[f.segCls[n]]}`).join(' / ')}・別々に購入】`
+    : f.cls && f.cls !== 1 ? `【${CLASSES[f.cls]}】` : '';
   return `${cls}${f.airlines.join(' / ')} ${f.numbers.join('→')} · ${flightLine(f)} · ${flightStops(f)}`;
 }
 
@@ -953,8 +969,8 @@ function openFlightSearch(p, i) {
   const codes = legCodes(p, i);
   const pairs = p.stops.map((x, k) => ({ x, k })).filter(({ x, k }) => k > 0 && k !== i && x.leg.mode === 'flight');
   const pairSel = L.bundle ? p.stops.findIndex(x => x.id === L.bundle) : '';
-  const clsDefault = L.flight?.cls ? [...new Set([1, L.flight.cls])] : (settings.flightClasses || [1]);
-  let state = { step: 0, results: [], legsOrder: null, params: null, first: null, classes: [1], cls: 1 };
+  const clsDefault = typeof L.flight?.cls === 'number' ? [...new Set([1, L.flight.cls])] : (settings.flightClasses || [1]);
+  let state = { step: 0, results: [], legsOrder: null, params: null, first: null, classes: [1], cls: 1, last: null, mix: null };
 
   dlg.innerHTML = `
     <div class="sheet-head"><h3>✈️ ${esc(a?.name || '')} → ${esc(b?.name || '')}</h3><button class="icon-btn" data-fl="close" aria-label="閉じる">✕</button></div>
@@ -989,6 +1005,7 @@ function openFlightSearch(p, i) {
 
   // クラスごとの検索結果を、同じ便どうしで1行にまとめる
   const showResults = (byCls, title, errs = []) => {
+    state.last = { byCls, title, errs }; state.mix = null;
     const map = new Map();
     for (const { c, j } of byCls) {
       const opts = [...(j.best_flights || []), ...(j.other_flights || [])].map(parseOption).filter(Boolean);
@@ -1017,12 +1034,15 @@ function openFlightSearch(p, i) {
           <div class="info">
             <div class="name">${esc(flightLine(f))}</div>
             <div class="meta">${esc(`${f.airlines.join(' / ')} ${f.numbers.join('→')} · ${fmtDur(f.mins * 60)} · ${flightStops(f)}`)}</div>
+            ${f.segs.length > 1 ? `<div class="meta">${esc(f.segs.map(s => `${s.from}→${s.to} ${fmtDur(s.mins * 60)}`).join(' / '))}</div>` : ''}
           </div>
           ${one ? `<div class="fl-price">${r.prices[cs[0]] != null ? fmtJPY(r.prices[cs[0]]) : '—'}</div>` : ''}
         </div>
         ${one ? '' : `<div class="cls-prices">${cs.map(c => r.prices[c] !== undefined
           ? `<button type="button" data-pick="${k}" data-cls="${c}" class="${r.prices[c] === cheapest[c] ? 'best' : ''}"><small>${CLASSES[c]}</small>${r.prices[c] != null ? fmtJPY(r.prices[c]) : '価格不明'}</button>`
           : `<span class="na"><small>${CLASSES[c]}</small>設定なし</span>`).join('')}</div>`}
+        ${f.segs.length > 1 && state.legsOrder.length === 1
+          ? `<button type="button" class="text-btn mix-btn" data-mix="${k}">区間ごとにクラスを変えて見積もる ›</button>` : ''}
       </li>`;
     }).join('');
   };
@@ -1033,6 +1053,99 @@ function openFlightSearch(p, i) {
     rs.forEach((r, n) => r.status === 'fulfilled' ? ok.push({ c: classes[n], j: r.value }) : errs.push(`${CLASSES[classes[n]]}: ${r.reason.message}`));
     if (!ok.length) throw new Error(errs.join(' / '));
     return { ok, errs };
+  };
+
+  // ---- 区間ごとにクラスを変える(各区間を別々の片道として見積もる) ----
+  const mixRule = () => Object.assign({ hours: 4, short: 1, long: 3 }, settings.mixRule);
+  const applyRule = (segs, r) => segs.map(s => (s.mins <= r.hours * 60 ? r.short : r.long));
+  const openMix = row => {
+    const segs = row.f.segs;
+    state.mix = { row, pick: applyRule(segs, mixRule()), prices: segs.map(() => ({})), busy: false };
+    drawMix();
+  };
+  const mixTotal = m => {
+    const ps = m.pick.map((c, n) => m.prices[n][c]);
+    return ps.every(x => typeof x === 'number') ? ps.reduce((a, b) => a + b, 0) : null;
+  };
+  const drawMix = () => {
+    const m = state.mix, r = mixRule(), segs = m.row.f.segs;
+    const total = mixTotal(m);
+    const need = m.pick.filter((c, n) => m.prices[n][c] === undefined).length;
+    const clsOpts = sel => Object.entries(CLASSES).map(([c, n]) => `<option value="${c}" ${+c === sel ? 'selected' : ''}>${n}</option>`).join('');
+    const through = Object.entries(m.row.prices).filter(([, v]) => v != null);
+    status('区間ごとにクラスを選んで「見積もる」を押してください');
+    $('#flResults', dlg).innerHTML = `
+      <li class="mix">
+        <button type="button" class="text-btn" data-mixact="back">‹ 便の一覧に戻る</button>
+        <div class="mix-rule">
+          <span>搭乗 <input type="number" name="mixH" value="${r.hours}" min="0" step="0.5" inputmode="decimal"> 時間以内は <select name="mixS">${clsOpts(r.short)}</select></span>
+          <span>それより長い区間は <select name="mixL">${clsOpts(r.long)}</select></span>
+          <button type="button" class="chip-btn" data-mixact="rule">当てはめる</button>
+        </div>
+        ${segs.map((s, n) => {
+          const pr = m.prices[n][m.pick[n]];
+          return `<div class="mix-seg">
+            <div class="name">${esc(`${s.from} ${hhmm(s.dep)} → ${s.to} ${hhmm(s.arr)}`)}</div>
+            <div class="meta">${esc(`${s.airline} ${s.num} · 搭乗 ${fmtDur(s.mins * 60)}`)}</div>
+            <div class="cls-seg">${Object.entries(CLS_SHORT).map(([c, nm]) =>
+              `<button type="button" data-mixseg="${n}" data-c="${c}" class="${m.pick[n] === +c ? 'on' : ''}">${nm}</button>`).join('')}
+              <span class="mix-price">${pr === undefined ? '' : pr === null ? 'この便は見つからず' : fmtJPY(pr)}</span>
+            </div>
+          </div>`;
+        }).join('')}
+        <div class="mix-sum">
+          ${through.map(([c, v]) => `<div><span>通しで${CLASSES[c]}</span><b>${fmtJPY(v)}</b></div>`).join('')}
+          <div class="mix-total"><span>この組み合わせ(区間ごとに購入)</span><b>${total != null ? fmtJPY(total) : '—'}</b></div>
+        </div>
+        <div class="btn-row">
+          ${need || m.busy
+            ? `<button type="button" class="primary" data-mixact="est" ${m.busy ? 'disabled' : ''}>${m.busy ? '見積もり中…' : `見積もる(検索${need}回分)`}</button>`
+            : ''}
+          <button type="button" class="${need || m.busy ? 'chip-btn' : 'primary'}" data-mixact="use" ${total != null && !need ? '' : 'disabled'}>この組み合わせで決める</button>
+        </div>
+        <p class="sub">※ 区間ごとに別々の航空券として買った場合の目安です。前の便が遅れても次の便に振り替えてもらえず、荷物の預け直しも必要になることがあります。航空会社のサイトや旅行会社では、1枚の航空券でクラスを混ぜて買えて、この合計より安くなることもあります。</p>
+      </li>`;
+  };
+  const mixClick = async e => {
+    const m = state.mix;
+    const seg = e.target.closest('[data-mixseg]');
+    if (seg) { m.pick[+seg.dataset.mixseg] = +seg.dataset.c; drawMix(); return; }
+    const act = e.target.closest('[data-mixact]')?.dataset.mixact;
+    if (act === 'back') { const l = state.last; showResults(l.byCls, l.title, l.errs); return; }
+    if (act === 'rule') {
+      const box = $('.mix-rule', dlg);
+      settings.mixRule = { hours: num(box.querySelector('[name=mixH]').value), short: +box.querySelector('[name=mixS]').value, long: +box.querySelector('[name=mixL]').value };
+      saveSettings();
+      m.pick = applyRule(m.row.f.segs, settings.mixRule);
+      drawMix(); return;
+    }
+    if (act === 'est') {
+      m.busy = true; drawMix();
+      const segs = m.row.f.segs;
+      const errs = [];
+      await Promise.all(segs.map(async (s, n) => {
+        const c = m.pick[n];
+        if (m.prices[n][c] !== undefined) return;
+        try {
+          const j = await flightApi({ type: 2, stops: 1, departure_id: s.from, arrival_id: s.to, outbound_date: s.dep.slice(0, 10), travel_class: c });
+          const hit = [...(j.best_flights || []), ...(j.other_flights || [])]
+            .find(o => (o.flights || []).length === 1 && normNum(o.flights[0].flight_number) === normNum(s.num));
+          m.prices[n][c] = hit?.price ?? null;
+        } catch (err) { errs.push(`${s.from}→${s.to}: ${err.message}`); }
+      }));
+      m.busy = false; drawMix();
+      if (errs.length) status('一部の区間を見積もれませんでした: ' + errs.join(' / '));
+      return;
+    }
+    if (act === 'use') {
+      const total = mixTotal(m);
+      if (total == null) return;
+      const { token, ...f } = m.row.f;
+      const leg = state.legsOrder[0];
+      unbundle(p, L);
+      Object.assign(L, { flight: { ...f, price: total, cls: 'mix', segCls: m.pick.slice() }, cost: total, cur: 'JPY', date: leg.date, fromCodes: leg.from, toCodes: leg.to });
+      dlg.close(); commit(); toast('便を設定しました(区間ごとにクラスを変更)');
+    }
   };
 
   form.addEventListener('submit', async e => {
@@ -1069,6 +1182,9 @@ function openFlightSearch(p, i) {
 
   dlg.onclick = async e => {
     if (e.target.closest('[data-fl="close"]')) { dlg.close(); return; }
+    if (state.mix && e.target.closest('.mix')) { mixClick(e); return; }
+    const mixBtn = e.target.closest('[data-mix]');
+    if (mixBtn) { openMix(state.results[+mixBtn.dataset.mix]); return; }
     const li = e.target.closest('[data-pick]');
     if (!li) return;
     const row = state.results[+li.dataset.pick];

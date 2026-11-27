@@ -304,3 +304,23 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px;
   max-width: calc(100% - 32px); z-index: 10; text-align: center;
 }
+
+/* ---------- 区間ごとのクラス ---------- */
+.mix-btn { margin: 6px 0 0 38px; font-size: 13px; }
+.fl-results li.mix { display: grid; gap: 12px; cursor: default; border-bottom: 0; }
+.fl-results li.mix:active { background: none; }
+.fl-results li.mix > .text-btn { justify-self: start; }
+.mix-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 14px; padding: 10px; border-radius: 10px; background: var(--bg-2); }
+.mix-rule input { width: 4.5em; }
+.mix-rule input, .mix-rule select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+.mix-seg { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.cls-seg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+.cls-seg button { font: inherit; font-size: 13px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--text); cursor: pointer; }
+.cls-seg button.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.mix-price { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mix-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.mix-sum div { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
+.mix-sum b { font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; }
+.mix-sum .mix-total { grid-column: 1 / -1; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 10px; }
+.fl-results li.mix .btn-row button[disabled] { opacity: .5; }
+.mix-rule > span { white-space: nowrap; }
