@@ -270,6 +270,52 @@ function clsFromText(t) {
   return null;
 }
 const normNum = s => String(s || '').replace(/\s/g, '').toUpperCase();
+
+// Google側の結果で、区間によってクラスが違う(例: プレエコで検索したが国内線区間だけエコノミー)
+function mixedNote(f) {
+  const segs = f.segs || [];
+  const cs = segs.map(s => s.cls).filter(Boolean);
+  if (segs.length < 2 || new Set(cs).size < 2) return '';
+  return 'クラス混在: ' + segs.map(s => `${s.from}→${s.to} ${CLASSES[s.cls] || s.clsText || '?'}`).join(' / ');
+}
+
+// 便の行程の詳細(区間・乗り継ぎ・機材など)
+function flightDetailHTML(f, { showCls = true } = {}) {
+  const segs = f.segs || [];
+  if (!segs.length) return '<p class="sub">この便は詳しい行程が保存されていません。もう一度「便を変える」で選び直すと見られます。</p>';
+  const day0 = segs[0].dep.slice(0, 10);
+  const t = s => `${hhmm(s)}${s.slice(0, 10) !== day0 ? `<small>(${fmtDate(s.slice(0, 10))})</small>` : ''}`;
+  const rows = segs.map((s, n) => {
+    const cls = f.segCls ? CLASSES[f.segCls[n]] : showCls ? (CLASSES[s.cls] || s.clsText) : '';
+    const facts = [s.plane, cls, s.legroom && `足元 ${s.legroom}`].filter(Boolean);
+    const lay = f.lay[n];
+    return `
+      <li class="itin-seg">
+        <div class="itin-pt"><b>${t(s.dep)}</b><span>${esc(s.from)}</span><span class="sub">${esc(s.fromName)}</span></div>
+        <div class="itin-fly">
+          ${s.logo ? `<img src="${esc(s.logo)}" alt="" width="20" height="20" loading="lazy">` : ''}
+          <div>
+            <div>${esc(`${s.airline} ${s.num}`)} · ${fmtDur(s.mins * 60)}${s.overnight ? ' · 夜行便' : ''}</div>
+            ${facts.length ? `<div class="sub">${esc(facts.join(' · '))}</div>` : ''}
+            ${s.ext.length ? `<div class="itin-ext">${s.ext.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+            ${s.delayed ? '<div class="warn-txt">⚠️ 30分以上遅れることが多い便</div>' : ''}
+          </div>
+        </div>
+        <div class="itin-pt"><b>${t(s.arr)}</b><span>${esc(s.to)}</span><span class="sub">${esc(s.toName)}</span></div>
+      </li>
+      ${n < segs.length - 1 && lay ? `<li class="itin-lay">🔁 ${esc(lay.name || lay.id)} で乗り継ぎ ${fmtDur(lay.mins * 60)}${lay.overnight ? '(夜越し)' : ''}${lay.mins < 60 ? ' ⚠️ 短め' : ''}</li>` : ''}`;
+  }).join('');
+  const foot = [`所要 ${fmtDur(f.mins * 60)}`, f.co2 ? `CO₂ 約${Math.round(f.co2 / 1000)}kg` : '', ...(f.notes || [])].filter(Boolean);
+  return `<ol class="itin">${rows}</ol><p class="sub">${esc(foot.join(' · '))}</p>`;
+}
+function openFlightDetail(L) {
+  const dlg = $('#flightDlg');
+  dlg.innerHTML = `<div class="sheet-head"><h3>✈️ 便の行程</h3><button class="icon-btn" data-fl="close" aria-label="閉じる">✕</button></div>
+    <p class="sub">${esc(flightSummary(L))}${L.cost ? ' · ' + fmtMoney(num(L.cost), L.cur) : ''}</p>
+    ${flightDetailHTML(L.flight)}`;
+  dlg.onclick = e => { if (e.target.closest('[data-fl="close"]')) dlg.close(); };
+  dlg.showModal();
+}
 const flightCache = load(K.flights, {});
 async function flightApi(params) {
   if (!settings.flightProxy) throw new Error('フライト検索の中継URLが未設定です(メニュー →「設定」)');
@@ -298,11 +344,17 @@ function parseOption(o) {
     numbers: f.map(x => x.flight_number),
     dep: { id: f[0].departure_airport.id, time: f[0].departure_airport.time },
     arr: { id: f[f.length - 1].arrival_airport.id, time: f[f.length - 1].arrival_airport.time },
-    lay: (o.layovers || []).map(l => ({ id: l.id, mins: l.duration, overnight: !!l.overnight })),
+    lay: (o.layovers || []).map(l => ({ id: l.id, name: l.name || '', mins: l.duration, overnight: !!l.overnight })),
     segs: f.map(x => ({
       from: x.departure_airport.id, to: x.arrival_airport.id, dep: x.departure_airport.time, arr: x.arrival_airport.time,
-      num: x.flight_number, airline: x.airline, mins: x.duration || 0, cls: clsFromText(x.travel_class),
+      fromName: x.departure_airport.name || '', toName: x.arrival_airport.name || '',
+      num: x.flight_number, airline: x.airline, logo: x.airline_logo || '', mins: x.duration || 0,
+      cls: clsFromText(x.travel_class), clsText: x.travel_class || '',
+      plane: x.airplane || '', legroom: x.legroom || '', ext: x.extensions || [],
+      overnight: !!x.overnight, delayed: !!x.often_delayed_by_over_30_min,
     })),
+    co2: o.carbon_emissions?.this_flight || 0,
+    notes: o.extensions || [],
     token: o.departure_token || '',
   };
 }
@@ -446,6 +498,7 @@ function flightSummary(L) {
   const f = L.flight;
   if (!f) return '';
   const cls = f.segCls ? `【${f.segs.map((s, n) => `${s.from}-${s.to} ${CLS_SHORT[f.segCls[n]]}`).join(' / ')}・別々に購入】`
+    : mixedNote(f) ? `【${f.segs.map(s => `${s.from}-${s.to} ${CLS_SHORT[s.cls] || '?'}`).join(' / ')}】`
     : f.cls && f.cls !== 1 ? `【${CLASSES[f.cls]}】` : '';
   return `${cls}${f.airlines.join(' / ')} ${f.numbers.join('→')} · ${flightLine(f)} · ${flightStops(f)}`;
 }
@@ -468,6 +521,7 @@ function legCard(p, i) {
       <span class="kind">${m.icon}</span>
       <div class="info"><div class="name">${L.date ? fmtDate(L.date) : '日付未定'} · ${m.label}</div><div class="meta">${esc(meta.join(' · '))}</div></div>
     </div>
+    ${L.mode === 'flight' && L.flight ? `<button class="pick-btn" data-act="flightDetail" data-i="${i}">行程</button>` : ''}
     ${L.mode === 'flight' ? `<button class="pick-btn" data-act="findFlight" data-i="${i}">${L.flight ? '便を変える' : '便を探す'}</button>` : ''}
   </div>`;
 }
@@ -1035,12 +1089,14 @@ function openFlightSearch(p, i) {
             <div class="name">${esc(flightLine(f))}</div>
             <div class="meta">${esc(`${f.airlines.join(' / ')} ${f.numbers.join('→')} · ${fmtDur(f.mins * 60)} · ${flightStops(f)}`)}</div>
             ${f.segs.length > 1 ? `<div class="meta">${esc(f.segs.map(s => `${s.from}→${s.to} ${fmtDur(s.mins * 60)}`).join(' / '))}</div>` : ''}
+            ${one && mixedNote(f) ? `<div class="meta warn-txt">${esc(mixedNote(f))}</div>` : ''}
           </div>
           ${one ? `<div class="fl-price">${r.prices[cs[0]] != null ? fmtJPY(r.prices[cs[0]]) : '—'}</div>` : ''}
         </div>
         ${one ? '' : `<div class="cls-prices">${cs.map(c => r.prices[c] !== undefined
           ? `<button type="button" data-pick="${k}" data-cls="${c}" class="${r.prices[c] === cheapest[c] ? 'best' : ''}"><small>${CLASSES[c]}</small>${r.prices[c] != null ? fmtJPY(r.prices[c]) : '価格不明'}</button>`
           : `<span class="na"><small>${CLASSES[c]}</small>設定なし</span>`).join('')}</div>`}
+        <details class="itin-box"><summary>行程の詳細</summary>${flightDetailHTML(f, { showCls: one })}</details>
         ${f.segs.length > 1 && state.legsOrder.length === 1
           ? `<button type="button" class="text-btn mix-btn" data-mix="${k}">区間ごとにクラスを変えて見積もる ›</button>` : ''}
       </li>`;
@@ -1182,6 +1238,7 @@ function openFlightSearch(p, i) {
 
   dlg.onclick = async e => {
     if (e.target.closest('[data-fl="close"]')) { dlg.close(); return; }
+    if (e.target.closest('.itin-box')) return; // 詳細の開閉では便を選ばない
     if (state.mix && e.target.closest('.mix')) { mixClick(e); return; }
     const mixBtn = e.target.closest('[data-mix]');
     if (mixBtn) { openMix(state.results[+mixBtn.dataset.mix]); return; }
@@ -1622,6 +1679,7 @@ $('#view').addEventListener('click', e => {
     case 'back': ui.stop = -1; saveUi(); render(true); break;
     case 'editLeg': editLeg(p, i); break;
     case 'findFlight': openFlightSearch(p, i); break;
+    case 'flightDetail': if (p.stops[i]?.leg.flight) openFlightDetail(p.stops[i].leg); break;
     case 'stopUp': moveStop(p, ui.stop, -1); break;
     case 'stopDown': moveStop(p, ui.stop, 1); break;
     case 'rmStop':

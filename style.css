@@ -324,3 +324,28 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .mix-sum .mix-total { grid-column: 1 / -1; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 10px; }
 .fl-results li.mix .btn-row button[disabled] { opacity: .5; }
 .mix-rule > span { white-space: nowrap; }
+
+/* ---------- 便の行程 ---------- */
+.fl-results li[data-pick] { display: block; }
+.itin-box { margin: 6px 0 0 38px; font-size: 13px; }
+.itin-box summary { color: var(--accent); cursor: pointer; padding: 2px 0; list-style-position: inside; }
+.itin-box[open] summary { margin-bottom: 6px; }
+.itin { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; gap: 0; }
+.itin-seg { display: grid; gap: 4px; padding: 0 0 0 14px; border-left: 2px solid var(--accent); }
+.itin-pt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; position: relative; }
+.itin-pt::before { content: ''; position: absolute; left: -20px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); }
+.itin-pt b { font-variant-numeric: tabular-nums; }
+.itin-pt b small { font-weight: 400; color: var(--muted); margin-left: 2px; }
+.itin-pt .sub { margin: 0; font-size: 12px; }
+.itin-fly { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0 6px 4px; font-size: 13px; }
+.itin-fly img { border-radius: 4px; background: #fff; flex: 0 0 20px; }
+.itin-fly .sub { margin: 2px 0 0; font-size: 12px; }
+.itin-ext { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.itin-ext span { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--bg-2); color: var(--muted); }
+.itin-lay { margin: 6px 0; padding: 6px 10px; border-radius: 8px; background: var(--bg-2); font-size: 12px; color: var(--muted); }
+.warn-txt { color: #b45309; font-size: 12px; }
+@media (prefers-color-scheme: dark) { .warn-txt { color: #fbbf24; } }
+.fl-results .itin > li { display: grid; gap: 4px; align-items: initial; border-bottom: 0; cursor: default; padding: 0 0 0 14px; }
+.fl-results .itin > li:active { background: none; }
+.fl-results .itin > li.itin-lay { display: block; padding: 6px 10px; }
+.fl-results .itin > li.itin-lay:active { background: var(--bg-2); }
