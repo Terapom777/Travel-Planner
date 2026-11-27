@@ -258,6 +258,7 @@ async function refreshRate(force = false) {
 /* =========================================================
  * フライト検索(SerpApi Google Flights、Cloudflare Worker経由)
  * ========================================================= */
+const CLASSES = { 1: 'エコノミー', 2: 'プレエコ', 3: 'ビジネス', 4: 'ファースト' };
 const flightCache = load(K.flights, {});
 async function flightApi(params) {
   if (!settings.flightProxy) throw new Error('フライト検索の中継URLが未設定です(メニュー →「設定」)');
@@ -429,7 +430,8 @@ function viewPlan() {
 function flightSummary(L) {
   const f = L.flight;
   if (!f) return '';
-  return `${f.airlines.join(' / ')} ${f.numbers.join('→')} · ${flightLine(f)} · ${flightStops(f)}`;
+  const cls = f.cls && f.cls !== 1 ? `【${CLASSES[f.cls]}】` : '';
+  return `${cls}${f.airlines.join(' / ')} ${f.numbers.join('→')} · ${flightLine(f)} · ${flightStops(f)}`;
 }
 
 function legCard(p, i) {
@@ -951,7 +953,8 @@ function openFlightSearch(p, i) {
   const codes = legCodes(p, i);
   const pairs = p.stops.map((x, k) => ({ x, k })).filter(({ x, k }) => k > 0 && k !== i && x.leg.mode === 'flight');
   const pairSel = L.bundle ? p.stops.findIndex(x => x.id === L.bundle) : '';
-  let state = { step: 0, results: [], legsOrder: null, params: null, first: null };
+  const clsDefault = L.flight?.cls ? [...new Set([1, L.flight.cls])] : (settings.flightClasses || [1]);
+  let state = { step: 0, results: [], legsOrder: null, params: null, first: null, classes: [1], cls: 1 };
 
   dlg.innerHTML = `
     <div class="sheet-head"><h3>✈️ ${esc(a?.name || '')} → ${esc(b?.name || '')}</h3><button class="icon-btn" data-fl="close" aria-label="閉じる">✕</button></div>
@@ -965,6 +968,10 @@ function openFlightSearch(p, i) {
         <option value="">この区間だけ(片道)</option>
         ${pairs.map(({ x, k }) => `<option value="${k}" ${pairSel === k ? 'selected' : ''}>${esc(stopPlace(p.stops[k - 1])?.name || '')} → ${esc(stopPlace(x)?.name || '')}${x.leg.date ? ' ' + fmtDate(x.leg.date) : ''}</option>`).join('')}
       </select></label>` : ''}
+      <div class="f"><span>座席クラス(複数選ぶと並べて比較)</span>
+        <div class="cls-pick">${Object.entries(CLASSES).map(([c, n]) =>
+          `<label><input type="checkbox" name="cls" value="${c}" ${clsDefault.includes(+c) ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div>
+      </div>
       <label class="f check"><input type="checkbox" name="nonstop"><span>直行便のみ</span></label>
       <div class="btn-row">
         <button class="primary" type="submit">検索</button>
@@ -980,20 +987,52 @@ function openFlightSearch(p, i) {
     $('#gfLink', dlg).href = gfUrl(form.from.value.trim(), form.to.value.trim(), form.date.value);
   });
 
-  const showResults = (j, title) => {
-    const opts = [...(j.best_flights || []), ...(j.other_flights || [])].map(parseOption).filter(Boolean);
-    const seen = new Set();
-    state.results = opts.filter(o => { const k = o.numbers.join() + o.dep.time; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 25);
-    status(state.results.length ? title : '便が見つかりませんでした。日付や空港を変えてみてください。');
-    $('#flResults', dlg).innerHTML = state.results.map((f, k) => `
-      <li data-pick="${k}">
-        ${f.logo ? `<img src="${esc(f.logo)}" alt="" width="28" height="28" loading="lazy">` : '<span class="kind">✈️</span>'}
-        <div class="info">
-          <div class="name">${esc(flightLine(f))}</div>
-          <div class="meta">${esc(`${f.airlines.join(' / ')} ${f.numbers.join('→')} · ${fmtDur(f.mins * 60)} · ${flightStops(f)}`)}</div>
+  // クラスごとの検索結果を、同じ便どうしで1行にまとめる
+  const showResults = (byCls, title, errs = []) => {
+    const map = new Map();
+    for (const { c, j } of byCls) {
+      const opts = [...(j.best_flights || []), ...(j.other_flights || [])].map(parseOption).filter(Boolean);
+      for (const o of opts) {
+        const k = o.numbers.join() + o.dep.time;
+        let row = map.get(k);
+        if (!row) map.set(k, (row = { f: o, prices: {}, tokens: {} }));
+        if (row.prices[c] == null || (o.price != null && o.price < row.prices[c])) { row.prices[c] = o.price; row.tokens[c] = o.token; }
+      }
+    }
+    const cs = byCls.map(x => x.c);
+    const minOf = r => Math.min(...cs.map(c => r.prices[c] ?? Infinity));
+    state.results = [...map.values()].sort((a, b) => minOf(a) - minOf(b)).slice(0, 30);
+    const cheapest = Object.fromEntries(cs.map(c => [c, Math.min(...state.results.map(r => r.prices[c] ?? Infinity))]));
+    const errMsg = errs.length ? ` ⚠️ ${errs.join(' / ')}` : '';
+    status((state.results.length ? title : '便が見つかりませんでした。日付や空港を変えてみてください。') + errMsg);
+    const summary = cs.length > 1 && state.results.length ? `<li class="cls-sum">${cs.map(c =>
+      `<div><span>${CLASSES[c]}の最安</span><b>${isFinite(cheapest[c]) ? fmtJPY(cheapest[c]) : '—'}</b></div>`).join('')}</li>` : '';
+    $('#flResults', dlg).innerHTML = summary + state.results.map((r, k) => {
+      const f = r.f;
+      const one = cs.length === 1;
+      return `
+      <li ${one ? `data-pick="${k}" data-cls="${cs[0]}"` : ''} class="${one ? '' : 'multi'}">
+        <div class="fl-main">
+          ${f.logo ? `<img src="${esc(f.logo)}" alt="" width="28" height="28" loading="lazy">` : '<span class="kind">✈️</span>'}
+          <div class="info">
+            <div class="name">${esc(flightLine(f))}</div>
+            <div class="meta">${esc(`${f.airlines.join(' / ')} ${f.numbers.join('→')} · ${fmtDur(f.mins * 60)} · ${flightStops(f)}`)}</div>
+          </div>
+          ${one ? `<div class="fl-price">${r.prices[cs[0]] != null ? fmtJPY(r.prices[cs[0]]) : '—'}</div>` : ''}
         </div>
-        <div class="fl-price">${f.price != null ? fmtJPY(f.price) : '—'}</div>
-      </li>`).join('');
+        ${one ? '' : `<div class="cls-prices">${cs.map(c => r.prices[c] !== undefined
+          ? `<button type="button" data-pick="${k}" data-cls="${c}" class="${r.prices[c] === cheapest[c] ? 'best' : ''}"><small>${CLASSES[c]}</small>${r.prices[c] != null ? fmtJPY(r.prices[c]) : '価格不明'}</button>`
+          : `<span class="na"><small>${CLASSES[c]}</small>設定なし</span>`).join('')}</div>`}
+      </li>`;
+    }).join('');
+  };
+  // 選んだクラスをそれぞれ検索(1クラス=検索1回)
+  const searchClasses = async (params, classes) => {
+    const rs = await Promise.allSettled(classes.map(c => flightApi({ ...params, travel_class: c })));
+    const ok = [], errs = [];
+    rs.forEach((r, n) => r.status === 'fulfilled' ? ok.push({ c: classes[n], j: r.value }) : errs.push(`${CLASSES[classes[n]]}: ${r.reason.message}`));
+    if (!ok.length) throw new Error(errs.join(' / '));
+    return { ok, errs };
   };
 
   form.addEventListener('submit', async e => {
@@ -1016,11 +1055,15 @@ function openFlightSearch(p, i) {
       state.legsOrder = legs;
       params = { ...base, type: 3, multi_city_json: JSON.stringify(legs.map(x => ({ departure_id: x.from, arrival_id: x.to, date: x.date }))) };
     }
-    state.params = params; state.step = 0; state.first = null;
-    status('検索中…'); $('#flResults', dlg).innerHTML = '';
+    const classes = [...form.querySelectorAll('[name="cls"]:checked')].map(x => +x.value);
+    if (!classes.length) { status('座席クラスを1つ以上選んでください'); return; }
+    settings.flightClasses = classes; saveSettings();
+    state.params = params; state.step = 0; state.first = null; state.classes = classes;
+    status(classes.length > 1 ? `検索中…(${classes.length}クラス分)` : '検索中…'); $('#flResults', dlg).innerHTML = '';
     try {
-      const j = await flightApi(params);
-      showResults(j, state.legsOrder.length > 1 ? '① 1つ目の区間を選んでください(価格は全区間の合計)' : 'タップで選択');
+      const { ok, errs } = await searchClasses(params, classes);
+      const pick = classes.length > 1 ? 'クラスの価格をタップで選択' : 'タップで選択';
+      showResults(ok, state.legsOrder.length > 1 ? `① 1つ目の区間の便の${pick}(価格は全区間の合計)` : pick, errs);
     } catch (err) { status('検索できませんでした: ' + err.message); }
   });
 
@@ -1028,15 +1071,18 @@ function openFlightSearch(p, i) {
     if (e.target.closest('[data-fl="close"]')) { dlg.close(); return; }
     const li = e.target.closest('[data-pick]');
     if (!li) return;
-    const f = state.results[+li.dataset.pick];
+    const row = state.results[+li.dataset.pick];
+    const cls = +li.dataset.cls;
+    const f = { ...row.f, price: row.prices[cls], token: row.tokens[cls], cls };
     const legs = state.legsOrder;
     if (legs.length > 1 && state.step === 0) {
       if (!f.token) { status('この便は続きの区間を検索できません。別の便を選んでください'); return; }
-      state.first = f; state.step = 1;
+      state.first = f; state.step = 1; state.cls = cls;
       status('検索中…'); $('#flResults', dlg).innerHTML = '';
       try {
-        const j = await flightApi({ ...state.params, departure_token: f.token });
-        showResults(j, '② 2つ目の区間を選んでください(価格は全区間の合計)');
+        // 2つ目の区間は、1つ目で選んだクラスで続きを検索
+        const { ok } = await searchClasses({ ...state.params, departure_token: f.token }, [cls]);
+        showResults(ok, `② 2つ目の区間を選んでください(${CLASSES[cls]}・価格は全区間の合計)`);
       } catch (err) { status('検索できませんでした: ' + err.message); }
       return;
     }
