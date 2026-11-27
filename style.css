@@ -372,3 +372,34 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .rule-box .na { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .mix-rule select { width: auto; max-width: 100%; }
 .mix-rule input { width: 4.5em; }
+
+/* ---------- 旅程からすぐ外す・元に戻す ---------- */
+.rm-btn { flex: 0 0 auto; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 15px; cursor: pointer; }
+.rm-btn:hover, .rm-btn:focus-visible { background: var(--bg-2); color: var(--danger, #dc2626); }
+.toast-btn { margin-left: 12px; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+
+/* ---------- 安く探す ---------- */
+.sub-opt { margin: -4px 0 0 28px; font-size: 13px; }
+.sub-opt input { width: 4.5em; }
+.fl-cond .f.check select { width: auto; display: inline-block; padding: 2px 6px; }
+#flCount { font-weight: 400; font-size: 11px; opacity: .85; }
+.fl-extras { display: grid; gap: 8px; margin-bottom: 8px; }
+.fl-extras:empty { display: none; }
+.ex-card { padding: 10px 12px; border-radius: 10px; background: var(--bg-2); font-size: 13px; line-height: 1.6; }
+.ex-card.sub { margin: 0; color: var(--muted); }
+.lv-low { color: #15803d; }
+.lv-high { color: #b91c1c; }
+.lv-typical { color: var(--text); }
+@media (prefers-color-scheme: dark) { .lv-low { color: #4ade80; } .lv-high { color: #f87171; } }
+.flex-strip { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0 2px; }
+.flex-strip button { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.flex-strip button small { font-weight: 400; font-size: 11px; color: var(--muted); }
+.flex-strip button.low { border-color: #15803d; }
+.flex-strip button.cur { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.flex-strip button.cur small { color: inherit; }
+.split-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+.split-list > li { padding: 8px 0; border-top: 1px solid var(--line); }
+.split-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.split-list .itin-box { margin-left: 0; }
+.us-price { color: var(--accent); }
+.cls-pick span.sub { border: 0; padding: 0; border-radius: 0; color: var(--muted); font-size: 12px; cursor: default; }
